@@ -1,103 +1,102 @@
-from flask import Flask, jsonify, request, render_template_string
-app = Flask(__name__)
-# Sample data (temporary list for demo)
-students = [ {"id": 1, "name": "Juan", "grade": 85, "section": "Stallman"},
-{"id": 2, "name": "Maria", "grade": 90, "section": "Stallman"},]
-# Home page
-@app.route('/')
-def home():
-return "Welcome to the Student API! Go to /add_student_form to add a student."
-# --- FORM PAGE (for browser use) ---
-@app.route('/add_student_form')
-def add_student_form():
-# simple HTML form (you can later move this to a separate HTML file)
-html = """
-<h2>Add New Student</h2>
-<form action="/add_student" method="POST">
-Name: <input type="text" name="name" autofocus><br><br>
-Grade: <input type="number" name="grade"><br><br>
-Section: <input type="text" name="section"><br><br>
-<input type="submit" value="Add Student">
-</form>
-"""
-return render_template_string(html)
-# --- ADD STUDENT (POST) ---
-@app.route('/add_student', methods=['POST'])
-def add_student():
-name = request.form.get("name")
-grade = int(request.form.get("grade"))
-section = request.form.get("section")
-new_id = len(students) + 1
-new_student = {
-"id": new_id,
-"name": name,
-"grade": grade,
-"section": section
-}
-students.append(new_student)
-return jsonify({
-"message": "Student added successfully!",
-"student": new_student
-})
-
-# --- VIEW ALL STUDENTS ---
-@app.route('/students', methods=['GET'])
-def get_students():
-return jsonify(students)
-if __name__ == '__main__':
-app.run(debug=True)
- /update_student/<id> → update data (using POST)
 from flask import Flask, jsonify, request, render_template_string, redirect, url_for
+
 app = Flask(__name__)
-# Sample in-memory data
+
+# --- In-Memory Database ---
+# Using a list of dictionaries to simulate a database
 students = [
-{"id": 1, "name": "Juan", "grade": 85, "section": "Zechariah"},
-{"id": 2, "name": "Maria", "grade": 90, "section": "Zechariah"},
-{"id": 3, "name": "Pedro", "grade": 70, "section": "Zion"}
+    {"id": 1, "name": "Juan Dela Cruz", "grade": 85, "section": "Stallman"},
+    {"id": 2, "name": "Maria Clara", "grade": 90, "section": "Stallman"},
+    {"id": 3, "name": "Pedro Penduko", "grade": 72, "section": "Zion"}
 ]
+
+# --- UI Components (Shared Layout) ---
+HEADER = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Student Management System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-gray-50 p-8">
+    <div class="max-w-4xl mx-auto">
+"""
+FOOTER = "</div></body></html>"
+
+# --- Routes ---
+
 @app.route('/')
 def home():
-return redirect(url_for('list_students'))
-# Show all students
+    return redirect(url_for('list_students'))
+
+# 1. VIEW ALL STUDENTS
 @app.route('/students')
 def list_students():
-html = """
-<h2>Student List</h2>
-<ul>
-{% for s in students %}
-<li>
-ID: {{s.id}} - {{s.name}} (Grade: {{s.grade}}, Section: {{s.section}})
-[<a href="/edit_student/{{s.id}}">Edit</a>]
-</li>
-{% endfor %}
-</ul>
-"""
-return render_template_string(html, students=students)
-# Edit form
-@app.route('/edit_student/<int:id>', methods=['GET', 'POST'])
-def edit_student(id):
-student = next((s for s in students if s["id"] == id), None)
-if not student:
-return "Student not found", 404
-if request.method == 'POST':
-# Get form data and update
-student["name"] = request.form["name"]
+    html = HEADER + """
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-2xl font-bold text-gray-800">Student Roster</h2>
+        <a href="/add_student_form" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">+ Add Student</a>
+    </div>
+    
+    <div class="bg-white shadow-sm rounded-xl overflow-hidden border border-gray-200">
+        <table class="w-full text-left">
+            <thead class="bg-gray-50 border-b border-gray-200 text-gray-600 text-sm uppercase">
+                <tr>
+                    <th class="px-6 py-4">ID</th>
+                    <th class="px-6 py-4">Name</th>
+                    <th class="px-6 py-4">Grade</th>
+                    <th class="px-6 py-4">Section</th>
+                    <th class="px-6 py-4 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for s in students %}
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="px-6 py-4 font-mono text-gray-400">#{{s.id}}</td>
+                    <td class="px-6 py-4 font-semibold text-gray-800">{{s.name}}</td>
+                    <td class="px-6 py-4">
+                        <span class="px-2 py-1 rounded text-xs font-bold {{ 'bg-green-100 text-green-700' if s.grade >= 75 else 'bg-red-100 text-red-700' }}">
+                            {{s.grade}}%
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-gray-500">{{s.section}}</td>
+                    <td class="px-6 py-4 text-right">
+                        <a href="/edit_student/{{s.id}}" class="text-blue-600 hover:underline mr-3">Edit</a>
+                        <a href="/delete_student/{{s.id}}" class="text-red-500 hover:underline" onclick="return confirm('Delete this student?')">Delete</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    """ + FOOTER
+    return render_template_string(html, students=students)
 
-student["grade"] = int(request.form["grade"])
-student["section"] = request.form["section"]
-return redirect(url_for('list_students'))
-# Show form
-html = """
-<h2>Edit Student</h2>
-<form method="POST">
-Name: <input type="text" name="name" value="{{student.name}}"><br><br>
-Grade: <input type="number" name="grade" value="{{student.grade}}"><br><br>
-Section: <input type="text" name="section" value="{{student.section}}"><br><br>
-<button type="submit">Update</button>
-</form>
-<br>
-<a href="/students">Back to List</a>
-"""
-return render_template_string(html, student=student)
-if __name__ == '__main__':
-app.run(debug=True)
+# 2. ADD STUDENT (Form & Logic)
+@app.route('/add_student_form')
+def add_student_form():
+    html = HEADER + """
+    <div class="bg-white p-8 rounded-xl shadow-sm border border-gray-200 max-w-md mx-auto">
+        <h2 class="text-xl font-bold mb-6 text-gray-800">Add New Student</h2>
+        <form action="/add_student" method="POST" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Full Name</label>
+                <input type="text" name="name" class="w-full mt-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none" required>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Grade (0-100)</label>
+                <input type="number" name="grade" class="w-full mt-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none" min="0" max="100" required>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Section</label>
+                <input type="text" name="section" class="w-full mt-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none" required>
+            </div>
+            <div class="pt-4 flex justify-between">
+                <a href="/students" class="text-gray-500 hover:underline py-2">Cancel</a>
+                <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition">Save Student</button>
+            </div>
+        </form>
+    </div>
+    """ + FOOTER
