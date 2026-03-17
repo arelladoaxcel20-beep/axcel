@@ -1,17 +1,17 @@
+import os
 from flask import Flask, request, render_template_string, redirect, url_for
+import psycopg2
+import psycopg2.extras
+
+# Import your database connection logic!
+from database import get_db_connection, init_db
 
 app = Flask(__name__)
 
-# --- Enhanced In-Memory Data ---
-students = [
-    {"id": 1, "name": "Juan Dela Cruz", "grade": 88, "section": "Stallman"},
-    {"id": 2, "name": "Maria Clara", "grade": 92, "section": "Stallman"},
-    {"id": 3, "name": "Pedro Penduko", "grade": 70, "section": "Zion"},
-    {"id": 4, "name": "Elena Adarna", "grade": 75, "section": "Zion"}
-]
+# Force Render to initialize the table when the app boots up
+init_db()
 
 # --- UI Layout Helper ---
-# Using a clean, professional dashboard container
 LAYOUT_START = """
 <!DOCTYPE html>
 <html lang="en">
@@ -35,6 +35,17 @@ def home():
 
 @app.route('/students')
 def list_students():
+    # 1. Fetch live data from PostgreSQL
+    conn = get_db_connection()
+    if not conn:
+        return "Database connection error.", 500
+        
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("SELECT * FROM students ORDER BY id ASC")
+    students = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
     # --- Logic: Calculate Real-time Insights ---
     total = len(students)
     avg = sum(s['grade'] for s in students) / total if total else 0
@@ -105,6 +116,10 @@ def list_students():
                             </div>
                         </td>
                     </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="px-6 py-8 text-center text-slate-500">No students found. Add one above!</td>
+                    </tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -116,6 +131,9 @@ def list_students():
                 const term = this.value.toLowerCase();
                 const rows = document.querySelectorAll('#studentTable tr');
                 rows.forEach(row => {
+                    // Skip the "No students found" row if it exists
+                    if(row.children.length === 1) return; 
+                    
                     const text = row.innerText.toLowerCase();
                     row.style.display = text.includes(term) ? '' : 'none';
                 });
@@ -156,25 +174,45 @@ def add_student_form():
 
 @app.route('/add_student', methods=['POST'])
 def add_student():
-    new_id = max([s['id'] for s in students], default=0) + 1
-    students.append({
-        "id": new_id,
-        "name": request.form.get("name"),
-        "grade": int(request.form.get("grade")),
-        "section": request.form.get("section")
-    })
+    name = request.form.get("name")
+    grade = int(request.form.get("grade", 0))
+    section = request.form.get("section")
+    
+    # 2. INSERT into PostgreSQL
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO students (name, grade, section) VALUES (%s, %s, %s)", (name, grade, section))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
     return redirect(url_for('list_students'))
 
 @app.route('/edit_student/<int:id>', methods=['GET', 'POST'])
 def edit_student(id):
-    student = next((s for s in students if s["id"] == id), None)
-    if not student: return "Not Found", 404
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     if request.method == 'POST':
-        student["name"] = request.form["name"]
-        student["grade"] = int(request.form["grade"])
-        student["section"] = request.form["section"]
+        name = request.form["name"]
+        grade = int(request.form["grade"])
+        section = request.form["section"]
+        
+        # 3. UPDATE PostgreSQL
+        cursor.execute("UPDATE students SET name = %s, grade = %s, section = %s WHERE id = %s", (name, grade, section, id))
+        conn.commit()
+        cursor.close()
+        conn.close()
         return redirect(url_for('list_students'))
+
+    # GET Request: Fetch the specific student to pre-fill the form
+    cursor.execute("SELECT * FROM students WHERE id = %s", (id,))
+    student = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not student: 
+        return "Student Not Found", 404
 
     html = LAYOUT_START + f"""
     <div class="max-w-md mx-auto bg-white p-8 rounded-3xl shadow-sm border border-slate-200 mt-10">
@@ -192,8 +230,14 @@ def edit_student(id):
 
 @app.route('/delete_student/<int:id>')
 def delete_student(id):
-    global students
-    students = [s for s in students if s["id"] != id]
+    # 4. DELETE from PostgreSQL
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM students WHERE id = %s", (id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
     return redirect(url_for('list_students'))
 
 if __name__ == '__main__':
